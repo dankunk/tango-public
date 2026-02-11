@@ -2,7 +2,7 @@
 
 Tango is a Snakemake-based RNA-seq processing pipeline built for time-series experiments where you want reliable **gene- and transcript-level** quantification (salmon) using a **reference genome/annotation**, with an optional **genome-guided de novo transcriptome** assembly (via StringTie) for exploring novel isoforms. Starting from paired-end FASTQ files, Tango performs trimming + QC, splice-aware alignment, transcript assembly/merging, annotation comparison, QC (e.g., BUSCO), and Salmon quantification against a **reference transcriptome** and/or a **StringTie-merged transcriptome**. Where possible, steps are **streamed/piped between tools** (e.g., aligner → BAM processing) to avoid writing large intermediate files and help keep scratch usage manageable.
 
-- **Rulegraph (SVG):** [tango_rulegraph.svg](tango/SnakeFiles/svg/tango_rulegraph.svg)
+- **Rulegraph (SVG):** [tango_rulegraph.svg](tango/SnakeFiles/rulegraph.svg)
 
 <img src="tango/SnakeFiles/rulegraph.svg" alt="Tango rulegraph" width="900"/>
 
