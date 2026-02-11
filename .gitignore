@@ -1,0 +1,40 @@
+# Ignoring these files from being tracked.
+
+# Ignore ipynotebook checkpoints...
+.ipynb_checkpoints/
+
+# Ignore any FASTQ in RawData
+tango/RawData/*.fq.gz
+tango/RawData/*.fq
+
+# Ignore gff/gtf and fasta/fa files in the genome dir
+tango/Genome/*.fa
+tango/Genome/*.fasta
+# busco will create its own .fai in the dir where the genome lives, ignore this...
+# TODO, copy and remove file from Genome and place it in Output/busco/ during the run_busco rule.
+tango/Genome/*.fai
+
+tango/Genome/*.gff
+tango/Genome/*.gtf
+
+# Ignore any subdirs. Typically, in this directory, subdirectories will contain FASTQ files.
+tango/RawData/*/
+
+# Ignore .snakemake folder (local cache)
+.snakemake/
+
+# Ignore any output files. We assume these are large and have a default directory as defined in the workflow.
+Output/**
+# keep the directory and the output readme documentation
+!tango_Output/
+!tango_Output/README.md
+
+# ignore any testing logs (master slurm job scheduler)
+tango/SnakeFiles/snakemake_testing*
+
+# hide snakemake run reports from git tracking
+report.html
+
+#Ignore submodule logs
+## Cleanup if not using submods in final build.
+tango/SnakeFiles/TransrateSubModule/*.log
