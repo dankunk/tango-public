@@ -1,0 +1,514 @@
+### Snakefile ###
+
+### path to config file in the dir with the snakefile ###
+configfile: "tango_Snakemake_config.yaml"
+
+### any python imports ###
+# importing os for parsing dir and file names
+import os
+
+
+### user defined variables coming from the config file ###
+RAW = config["rawdata_dir"]
+FASTA = config["fasta"]
+GFF = config["gff"]
+OUTPUT = config["output_dir"]
+GFF_BASENAME = os.path.basename(GFF)
+TRANSCRIPTOME = config["trans_fasta"]
+UTILS = config["utils_dir"]
+
+### Output directory variables ###
+FASTP_TRIM_DIR   = os.path.join(OUTPUT, "fastp")
+HISAT2_INDEX_DIR  = os.path.join(OUTPUT, "hisat2_index")
+HISAT2_BAM_DIR = os.path.join(OUTPUT, "hisat2_samtools")
+STRINGTIE_DIR = os.path.join(OUTPUT, "stringtie")
+GFF_COMPARE_DIR = os.path.join(OUTPUT, "gff_compare")
+BUSCO_DIR = os.path.join(OUTPUT, "busco")
+SALMON_DIR = os.path.join(OUTPUT, "salmon")
+
+### Misc. Set-up Variables ###
+# grabbing a prefix for the hisat2 index files
+HISAT2_PREFIX = os.path.splitext(os.path.basename(FASTA))[0]
+HISAT2_INDEX_EXT = config["hisat2_index_extension"]
+# specifying all of the index file names. So snakemake doesnt start hisat 2 untill all indexes are present.
+HT2_FILES = expand(os.path.join(HISAT2_INDEX_DIR, HISAT2_PREFIX + ".{i}." + HISAT2_INDEX_EXT), i=range(1, 9))
+
+
+
+### Discovering sample names with wildcard ###
+SAMPLES, = glob_wildcards(os.path.join(RAW, "{sample}", "{sample}_1.fq.gz"))
+
+
+
+
+### Rules ###
+
+### Rule all ###
+# this specifies all the outputs we expect. Only need to run snakemake in the comand line with no defined outputs in the CL.
+rule all:
+    input:
+        # hisat2 prep; extract exons and splice sites.
+        os.path.join(HISAT2_INDEX_DIR, f"{HISAT2_PREFIX}.ss"),
+        os.path.join(HISAT2_INDEX_DIR, f"{HISAT2_PREFIX}.exon"),
+
+        # hisat2 indexes 1-8.
+        expand(os.path.join(HISAT2_INDEX_DIR, HISAT2_PREFIX + ".{i}." + HISAT2_INDEX_EXT), i = range(1,9)),
+
+        # fasta index with samtools
+        os.path.join(HISAT2_BAM_DIR, "fasta_index", os.path.basename(FASTA) + ".fai"),
+
+        # fastp output. trims and qc files.
+        expand(os.path.join(FASTP_TRIM_DIR, "{sample}", "{sample}_trim1.fq.gz"), sample = SAMPLES),
+        expand(os.path.join(FASTP_TRIM_DIR, "{sample}", "{sample}_trim2.fq.gz"), sample = SAMPLES),
+        expand(os.path.join(FASTP_TRIM_DIR, "{sample}", "{sample}_fastp.html"), sample = SAMPLES),
+        expand(os.path.join(FASTP_TRIM_DIR, "{sample}", "{sample}_fastp.json"), sample = SAMPLES),
+
+        # aligning and sorting bam files.
+        expand(os.path.join(HISAT2_BAM_DIR, "{sample}" ,"{sample}.sorted.bam"), sample = SAMPLES),
+
+        # Indexing bams and converting to bigwigs
+        expand(os.path.join(HISAT2_BAM_DIR, "{sample}", "{sample}.sorted.bam.bai"), sample = SAMPLES),
+        expand(os.path.join(HISAT2_BAM_DIR, "{sample}", "{sample}.sorted.bw"), sample = SAMPLES),
+
+        # Stringtie assemble, merge, and count w/ Ballgown
+        expand(os.path.join(STRINGTIE_DIR, "{sample}", "{sample}.gtf"), sample = SAMPLES),
+        os.path.join(STRINGTIE_DIR, "merged","stringtie_merged.gtf"),
+        expand(os.path.join(STRINGTIE_DIR, "{sample}", "ballgown", "t_data.ctab"), sample = SAMPLES),
+        expand(os.path.join(STRINGTIE_DIR, "{sample}", "ballgown", "i_data.ctab"), sample = SAMPLES),
+        expand(os.path.join(STRINGTIE_DIR, "{sample}", "ballgown", "e_data.ctab"), sample = SAMPLES),
+
+        # format a text file w/ sample names and directories for prepDE.py
+        os.path.join(STRINGTIE_DIR, "merged","prepDE_samples.txt"),
+
+        # DEseq2 Formated Counts w/ Stringtie prepDE.py script
+        os.path.join(STRINGTIE_DIR, "merged","gene_count_matrix.csv"),
+        os.path.join(STRINGTIE_DIR, "merged","transcript_count_matrix.csv"),
+
+        # UPDATE WHEN GFFCOMPARE RULE FINISHED: gffcompare; this is just a major output, more exist.
+        os.path.join(GFF_COMPARE_DIR, "stringtiecompare" ".annotated.gtf"),
+        os.path.join(GFF_COMPARE_DIR, "stringtiecompare" ".loci"),
+        os.path.join(GFF_COMPARE_DIR, "stringtiecompare" ".stats"),
+        os.path.join(GFF_COMPARE_DIR, "stringtiecompare" ".tracking"),
+        os.path.join(GFF_COMPARE_DIR, "stringtiecompare" ".stringtie_merged.gtf.refmap"),
+        os.path.join(GFF_COMPARE_DIR, "stringtiecompare" ".stringtie_merged.gtf.tmap"),
+
+        # making a merged transcriptome fasta file with gffread on the stringtie merged GTF file.
+        os.path.join(STRINGTIE_DIR, "merged", "stringtie_merged.fa"),
+
+        # using a small hidden done file to check if busco has run or not. Method may change.
+        os.path.join(BUSCO_DIR, ".done"),
+
+        ### Salmon pipeline
+        # salom quant files. Indexes wont be tracked for simplicity, might add later.
+        expand(os.path.join(SALMON_DIR, "ref_quant", "{sample}", "quant.sf"), sample=SAMPLES),
+        expand(os.path.join(SALMON_DIR, "denovo_quant", "{sample}", "quant.sf"), sample=SAMPLES),
+        
+        # Busco on OG reference transcriptome
+        os.path.join(BUSCO_DIR, "reference_transcriptome_busco", ".done"),
+
+        # gffcompare countClassCodes utility script output...
+        os.path.join(GFF_COMPARE_DIR, "countClassCodes", "stringtiecompare.annotated.gtf.class_summary.txt")
+
+### HISAT2 Index Prep- Extract Splice Sites ###
+rule hisat2_extract_splice_sites:
+    input:
+        gff = GFF
+    output:
+        ss = os.path.join(HISAT2_INDEX_DIR, f"{HISAT2_PREFIX}.ss")
+    log: os.path.join(HISAT2_INDEX_DIR, "logs", "extract_splice_sites.log")
+    shell:
+        """
+        hisat2_extract_splice_sites.py {input.gff} > {output.ss} 2> {log}
+        echo -e "tango has finished extracting splice sites from {GFF} (hisat2)" >> {log}
+        """
+
+### HISAT2 Index Prep- Extract Exons ###
+rule hisat2_extract_exons:
+    input:
+        gff = GFF
+    output:
+        exon = os.path.join(HISAT2_INDEX_DIR, f"{HISAT2_PREFIX}.exon")
+    log: os.path.join(HISAT2_INDEX_DIR, "logs", "extract_exons.log")
+    shell:
+        """
+        hisat2_extract_exons.py {input.gff} > {output.exon} 2> {log}
+        echo -e "tango has finished extracting exons from {GFF} (hisat2)" >> {log} 
+        """
+
+
+### HISAT2 Index Building ###
+rule build_hisat2_index:
+    input:
+        fasta = FASTA,
+        ss = rules.hisat2_extract_splice_sites.output.ss,
+        exon = rules.hisat2_extract_exons.output.exon
+    output:
+        expand(os.path.join(HISAT2_INDEX_DIR, HISAT2_PREFIX + ".{i}." + HISAT2_INDEX_EXT), i = range(1,9))
+    log: os.path.join(HISAT2_INDEX_DIR, "logs", "hisat2_build.log")
+    threads: 4
+    shell:
+        """
+        mkdir -p {HISAT2_INDEX_DIR}
+        hisat2-build -p {threads} --ss {input.ss} --exon {input.exon} {input.fasta} {HISAT2_INDEX_DIR}/{HISAT2_PREFIX} > {log} 2>&1
+        echo -e "\n\ntango finished indexing the genome file named {FASTA}\nwith exons and splice sites extracted from {GFF} (hisat2-build with splice graph)" >> {log}
+        """
+
+
+### SAMtools Fasta Indexing ###
+rule build_fasta_index:
+    input:
+        FASTA
+    output:
+        fai = os.path.join(HISAT2_BAM_DIR, "fasta_index", os.path.basename(FASTA) + ".fai")
+    log: os.path.join(HISAT2_BAM_DIR, "fasta_index", "fasta_index.log")
+    threads: 2
+    shell:
+        """
+        samtools faidx {input} -o {output.fai} 2> {log}
+        echo -e "tango finished building the fasta index on the genome file {FASTA} (samtools)" >> {log}
+        """
+
+
+### Fastp Trimming ###
+rule fastp_trim_pe:
+    input:
+        r1 = os.path.join(RAW, "{sample}", "{sample}_1.fq.gz"),
+        r2 = os.path.join(RAW, "{sample}", "{sample}_2.fq.gz")
+    output:
+        t1   = os.path.join(FASTP_TRIM_DIR, "{sample}", "{sample}_trim1.fq.gz"),
+        t2   = os.path.join(FASTP_TRIM_DIR, "{sample}", "{sample}_trim2.fq.gz"),
+        html = os.path.join(FASTP_TRIM_DIR, "{sample}", "{sample}_fastp.html"),
+        js   = os.path.join(FASTP_TRIM_DIR, "{sample}", "{sample}_fastp.json")
+    log:    os.path.join(FASTP_TRIM_DIR, "{sample}", "{sample}_fastp.log")
+    threads: 4
+    shell:
+        """
+        mkdir -p $(dirname {output.t1})
+        fastp -w {threads} -i {input.r1} -I {input.r2} -o {output.t1} -O {output.t2} -h {output.html} -j {output.js} > {log} 2>&1
+        echo -e "\n\ntango finished trimming and filtering reads for {wildcards.sample} (fastp)" >> {log}
+        """
+
+### Align with HISAT2, pipe SAM to BAM tools to save disc space ###
+rule hisat2_align_pe_bam:
+    input:
+        index = HT2_FILES, 
+        r1 = os.path.join(FASTP_TRIM_DIR, "{sample}", "{sample}_trim1.fq.gz"), 
+        r2 = os.path.join(FASTP_TRIM_DIR, "{sample}", "{sample}_trim2.fq.gz")
+    output:
+        bam = os.path.join(HISAT2_BAM_DIR, "{sample}", "{sample}.sorted.bam")
+    log: os.path.join(HISAT2_BAM_DIR, "{sample}", "logs", "{sample}_hisat2.log")
+    threads: 16
+    shell:
+        """
+        mkdir -p $(dirname {output.bam})
+        hisat2 -x {HISAT2_INDEX_DIR}/{HISAT2_PREFIX} --threads {threads} -1 {input.r1} -2 {input.r2} --rg-id {wildcards.sample} --dta 2>> {log} | \
+        samtools view -@ {threads} -bS - 2>> {log} | \
+        samtools sort -@ {threads} -o {output.bam} 2>> {log}
+        echo -e "\n\ntango finished aligning reads to the genome (hisat2), converting to .bam (samtools), and sorting the .bam (samtools) for {wildcards.sample}" >> {log}
+        """
+
+### create BAM index file with samtools ###
+rule samtools_index_bam:
+    input:
+        sorted_bam = os.path.join(HISAT2_BAM_DIR, "{sample}", "{sample}.sorted.bam")
+    output:
+        bai = os.path.join(HISAT2_BAM_DIR, "{sample}", "{sample}.sorted.bam.bai")
+    log: os.path.join(HISAT2_BAM_DIR, "{sample}", "logs", "{sample}_bamIndex.log")
+    threads: 8
+    shell:
+        """
+        samtools index -@ {threads} {input.sorted_bam} 2>> {log}
+        echo -e "\n\ntango finished indexing the sorted bam for {wildcards.sample} (samtools)" >> {log}
+        """
+
+### convert bigwig files from sorted BAMS for genome viewer visualization ###
+rule deeptools_make_bigwig:
+    input:
+        sorted_bam = os.path.join(HISAT2_BAM_DIR, "{sample}", "{sample}.sorted.bam"),
+        bai = os.path.join(HISAT2_BAM_DIR, "{sample}", "{sample}.sorted.bam.bai")
+    output:
+        bw = os.path.join(HISAT2_BAM_DIR, "{sample}", "{sample}.sorted.bw")
+    log: os.path.join(HISAT2_BAM_DIR, "{sample}", "logs", "{sample}_bigwig.log")
+    threads: 8
+    shell:
+        """
+        bamCoverage -b {input.sorted_bam} -o {output.bw} -p {threads} --normalizeUsing RPKM -of bigwig 2>> {log}
+        echo -e "tango finished creating a bigwig file for {wildcards.sample} (deeptools)" >> {log}
+        """
+
+### assemble mapped reads with stringite ###
+rule stringtie_assemble:
+    input:
+        bam = os.path.join(HISAT2_BAM_DIR, "{sample}", "{sample}.sorted.bam")
+    output:
+        gtf = os.path.join(STRINGTIE_DIR, "{sample}", "{sample}.gtf")
+    log: os.path.join(STRINGTIE_DIR, "{sample}", "{sample}_stringtie.log")
+    threads: 8
+    shell:
+        """
+        stringtie -p {threads} -G {GFF} -o {output.gtf} {input.bam} 2> {log}
+        echo -e "tango finished assembling {wildcards.sample} with stringtie" >> {log}
+        """
+
+rule stringtie_merge:
+    input:
+        gtf = expand(os.path.join(STRINGTIE_DIR, "{sample}", "{sample}.gtf"), sample = SAMPLES)
+    output:
+        merged = os.path.join(STRINGTIE_DIR, "merged" ,"stringtie_merged.gtf")
+    log: os.path.join(STRINGTIE_DIR, "merged", "logs" , "merge_stringtie.log")
+    threads: 6
+    shell:
+        """
+        stringtie --merge -G {GFF} -o {output.merged} {input.gtf} 2> {log}
+        echo -e "tango finished merging sample specific gtfs with stringtie" >> {log}
+        """
+
+rule stringtie_ballgown:
+    input:
+        bam = os.path.join(HISAT2_BAM_DIR, "{sample}", "{sample}.sorted.bam"),
+        merged = os.path.join(STRINGTIE_DIR, "merged" ,"stringtie_merged.gtf")
+    output:
+        gtf = os.path.join(STRINGTIE_DIR, "{sample}", "ballgown", "{sample}.gtf"),
+        t_ctab = os.path.join(STRINGTIE_DIR, "{sample}", "ballgown", "t_data.ctab"),
+        i_ctab = os.path.join(STRINGTIE_DIR, "{sample}", "ballgown", "i_data.ctab"),
+        e_ctab = os.path.join(STRINGTIE_DIR, "{sample}", "ballgown", "e_data.ctab")
+    log: os.path.join(STRINGTIE_DIR, "{sample}", "ballgown", "logs","{sample}_ballgown.log")
+    threads: 8
+    shell:
+        """
+        stringtie -e -B -p {threads} -G {input.merged} -o {output.gtf} {input.bam} 2> {log}
+        echo -e "tango finished making ballgown files for {wildcards.sample}" >> {log}
+        """
+
+
+rule make_prepDE_samples:
+    input:
+        # ensure all the ballgown GTFs exist first
+        gtfs = expand(
+            os.path.join(STRINGTIE_DIR, "{sample}", "ballgown", "{sample}.gtf"),
+            sample=SAMPLES
+        )
+    output:
+        os.path.join(STRINGTIE_DIR, "merged", "prepDE_samples.txt")
+    run:
+        # open writable file as fh; output[0] referse to the string "prepDE_samples.txt" the 0th element in the output list    
+        with open(output[0], "w") as fh:
+            # loop through each sample wildcard...
+            for s in SAMPLES:
+                # g is the directory where the sample specific gtf files live {s} is the sample name
+                g = os.path.join(STRINGTIE_DIR, s, "ballgown", f"{s}.gtf")
+                # write sample, then directory, then new line
+                fh.write(f"{s}\t{g}\n")
+               
+
+rule stringtie_prepDE:
+    input:
+        samples = os.path.join(STRINGTIE_DIR, "merged", "prepDE_samples.txt")
+    output:
+        gene_counts = os.path.join(STRINGTIE_DIR, "merged", "gene_count_matrix.csv"),
+        transcript_counts = os.path.join(STRINGTIE_DIR, "merged", "transcript_count_matrix.csv")
+    log: os.path.join(STRINGTIE_DIR, "merged", "logs" , "stringtie_prepDE.log")
+    shell:
+        """
+        prepDE.py -i {input.samples} -g {output.gene_counts} -t {output.transcript_counts} > {log} 2>&1
+        echo -e "tango finished converting ballgown output to DEseq2 ready count tables" >> {log}
+        """
+
+
+rule gff_compare:
+    input:
+        ref_gff = GFF,
+        merged_gff = os.path.join(STRINGTIE_DIR, "merged" ,"stringtie_merged.gtf")
+    output:
+        # read gff compare docs to see if your workflow will generate .annotated.gtf or .combined.gtf
+        # since we are passing a single gtf file (other than our reference gff), our output will be .annotated.gtf
+        annot_or_combined_gtf = os.path.join(GFF_COMPARE_DIR, "stringtiecompare" ".annotated.gtf"),
+        loci = os.path.join(GFF_COMPARE_DIR, "stringtiecompare" ".loci"),
+        stats = os.path.join(GFF_COMPARE_DIR, "stringtiecompare" ".stats"),
+        tracking = os.path.join(GFF_COMPARE_DIR, "stringtiecompare" ".tracking"),
+        refmap = os.path.join(GFF_COMPARE_DIR, "stringtiecompare" ".stringtie_merged.gtf.refmap"),
+        tmap = os.path.join(GFF_COMPARE_DIR, "stringtiecompare" ".stringtie_merged.gtf.tmap")
+    log: os.path.join(GFF_COMPARE_DIR, "logs", "gff_compare.log")
+    shell:
+        """
+        gffcompare -V -R -r {input.ref_gff} -o {GFF_COMPARE_DIR}/stringtiecompare {input.merged_gff} 2> {log}
+
+        # by default, gffcompare will place these files into the same directory as the input gff file supplied in gffcompare
+        # I think this is good, but its also good to have these files copied into the gff_compare dir since they are in fact generated during this step...
+        # its duplicated, but thats ok... maybe change later?
+        cp {STRINGTIE_DIR}/merged/stringtiecompare.stringtie_merged.gtf.refmap  {GFF_COMPARE_DIR}
+        cp {STRINGTIE_DIR}/merged/stringtiecompare.stringtie_merged.gtf.tmap    {GFF_COMPARE_DIR}
+
+        echo -e "\n\ntango finished using gffcompare to compare stringtie_merged.gtf and the reference {GFF_BASENAME}" >> {log}
+        echo -e "\ntango also copied the {output.refmap} and {output.tmap} files to {GFF_COMPARE_DIR} from {STRINGTIE_DIR}/merged/" >> {log}
+        """
+
+
+rule gffread_make_merged_fasta:
+    input:
+        genome = FASTA,
+        merged_gff = os.path.join(STRINGTIE_DIR, "merged" ,"stringtie_merged.gtf")
+    output:
+        merged_fasta = os.path.join(STRINGTIE_DIR, "merged", "stringtie_merged.fa")
+    log: os.path.join(STRINGTIE_DIR, "merged", "logs" , "gffread_make_merged_fasta.log")
+    shell:
+        """
+        gffread -w {output.merged_fasta} -g {input.genome} {input.merged_gff} 2> {log}
+        echo -e "\ntango finished creating a fasta file from {input.merged_gff}" >> {log}
+        """
+
+
+rule gffcompare_class_counting:
+    input:
+        tmap = os.path.join(GFF_COMPARE_DIR, "stringtiecompare.stringtie_merged.gtf.tmap"),
+        gtf  = os.path.join(GFF_COMPARE_DIR, "stringtiecompare.annotated.gtf")
+    output:
+        stats = os.path.join(GFF_COMPARE_DIR, "countClassCodes", "stringtiecompare.annotated.gtf.class_summary.txt"),
+        single_exons = os.path.join(GFF_COMPARE_DIR, "countClassCodes","stringtiecompare.stringtie_merged.gtf.tmap.single_exons.tsv")
+    params:
+        script_dir = os.path.join(UTILS, "countClassCodes.sh"),
+        single_exons_script = os.path.join(UTILS, "single_exon_transcripts.sh")
+    log: os.path.join(GFF_COMPARE_DIR, "countClassCodes", "logs", "countClassCodes.log")
+    shell:
+        """
+        bash {params.script_dir} {input.tmap} {input.gtf} {output.stats} 2> {log}
+        bash {params.single_exons_script} {input.tmap} {output.single_exons} 2> {log}
+        """
+
+# Some outputs are hard to track due to differing reference datasets.
+#
+# in this version (0.0.1?) we are using a hidden .done file to denote that busco has completed
+#
+# hard coding auto-lineage-euk, if else, be sure to change this... auto-lineage-prok for prokaryotes or just auto-lineage
+#
+# there is a busco log made in the working dir, after running busco it migrates to the --out_path specified dir.
+rule run_busco:
+    input:
+        merged_fasta = os.path.join(STRINGTIE_DIR, "merged", "stringtie_merged.fa")
+    output:
+        done_checker = os.path.join(BUSCO_DIR, ".done")
+    params:
+        busco_output_dir = BUSCO_DIR
+    log: os.path.join(BUSCO_DIR, "logs", "run_busco.log")
+    threads: 20
+    shell:
+        """
+        busco -i {input.merged_fasta} -m transcriptome --auto-lineage-euk \
+        --out_path {params.busco_output_dir} --download_path {params.busco_output_dir} \
+        -c {threads} > {log} 2>&1
+
+        touch {output.done_checker}
+
+        echo -e "\ntango finished running busco assembly qc on {input.merged_fasta}" >> {log}
+        """
+
+rule run_reference_busco:
+    input:
+        ref_transcriptome = TRANSCRIPTOME
+    output:
+        done_checker_ref = os.path.join(BUSCO_DIR, "reference_transcriptome_busco", ".done")
+    params:
+        busco_output_dir = os.path.join(BUSCO_DIR, "reference_transcriptome_busco")
+    log: os.path.join(BUSCO_DIR, "reference_transcriptome_busco", "logs", "run_reference_busco.log")
+    threads: 20
+    shell:
+        """
+        busco -i {input.ref_transcriptome} -m transcriptome --auto-lineage-euk \
+        --out_path {params.busco_output_dir} --download_path {params.busco_output_dir} \
+        -c {threads} > {log} 2>&1
+
+        touch {output.done_checker_ref}
+
+        echo -e "\ntango finished running busco assembly qc on {input.ref_transcriptome}" >> {log}
+        """
+
+# This step is a bit weird and less configurable then the rules above. To run salmon we need to build indexes, but we also want these indexes to be decoy aware. 
+# To do this we will:
+# 1st - Generate the files with the list of coordinates.
+# 2nd - Generate the concatenated transcriptome and genome file gentrome.
+# 3rd - Run the step to generate the indexes.
+# Finally, we will do this process for both the denovo transcriptome and the reference transcriptome.
+
+rule generate_salmon_index_ref:
+    input:
+        reference_transcriptome = TRANSCRIPTOME,
+        ref_genome = FASTA
+    output:
+        decoys = os.path.join(SALMON_DIR, "ref_quant", "index", "decoys.txt"),
+        gentrome = os.path.join(SALMON_DIR, "ref_quant", "index", "gentrome.fa"),
+        index_done = os.path.join(SALMON_DIR, "ref_quant", "index", ".done")
+    log: os.path.join(SALMON_DIR, "ref_quant", "logs", "ref_transcriptome_index.log")
+    threads: 12
+    shell:
+        """
+        mkdir -p {SALMON_DIR}/ref_quant/index
+
+        # generate decoys.txt
+        grep "^>" {input.ref_genome} | cut -d " " -f 1 | sed 's/>//g' > {output.decoys}
+
+        # concat transcriptome + genome
+        cat {input.reference_transcriptome} {input.ref_genome} > {output.gentrome}
+
+        # build salmon index
+        salmon index -t {output.gentrome} -d {output.decoys} -i $(dirname {output.index_done}) -p {threads} > {log} 2>&1
+
+        # mark done
+        touch {output.index_done}
+        """
+
+rule generate_salmon_index_denovo:
+    input:
+        denovo_transcriptome = os.path.join(STRINGTIE_DIR, "merged", "stringtie_merged.fa"),
+        ref_genome = FASTA
+    output:
+        decoys = os.path.join(SALMON_DIR, "denovo_quant", "index", "decoys.txt"),
+        gentrome = os.path.join(SALMON_DIR, "denovo_quant", "index", "gentrome.fa"),
+        index_done = os.path.join(SALMON_DIR, "denovo_quant", "index", ".done")
+    log: os.path.join(SALMON_DIR, "denovo_quant", "logs", "index.log")
+    threads: 12
+    shell:
+        """
+        mkdir -p {SALMON_DIR}/denovo_quant/index
+
+        grep "^>" {input.ref_genome} | cut -d " " -f 1 | sed 's/>//g' > {output.decoys}
+
+        cat {input.denovo_transcriptome} {input.ref_genome} > {output.gentrome}
+
+        salmon index -t {output.gentrome} -d {output.decoys} -i $(dirname {output.index_done}) -p {threads} > {log} 2>&1
+
+        touch {output.index_done}
+        """
+
+rule run_salmon_denovo:
+    input:
+        fq1 = os.path.join(FASTP_TRIM_DIR, "{sample}", "{sample}_trim1.fq.gz"),
+        fq2 = os.path.join(FASTP_TRIM_DIR, "{sample}", "{sample}_trim2.fq.gz"),
+        index_done = os.path.join(SALMON_DIR, "denovo_quant", "index", ".done")
+    output:
+        quant = os.path.join(SALMON_DIR, "denovo_quant", "{sample}", "quant.sf")
+    log: os.path.join(SALMON_DIR, "denovo_quant", "{sample}", "{sample}_salmon.log")
+    threads: 12
+    shell:
+        """
+        salmon quant -i $(dirname {input.index_done}) -l A \
+        -1 {input.fq1} -2 {input.fq2} \
+        -o $(dirname {output.quant}) \
+        -p {threads} --validateMappings > {log} 2>&1
+        """
+
+rule run_salmon_ref:
+    input:
+        fq1 = os.path.join(FASTP_TRIM_DIR, "{sample}", "{sample}_trim1.fq.gz"),
+        fq2 = os.path.join(FASTP_TRIM_DIR, "{sample}", "{sample}_trim2.fq.gz"),
+        index_done = os.path.join(SALMON_DIR, "ref_quant", "index", ".done")
+    output:
+        quant = os.path.join(SALMON_DIR, "ref_quant", "{sample}", "quant.sf")
+    log: os.path.join(SALMON_DIR, "ref_quant", "{sample}", "{sample}_salmon.log")
+    threads: 12
+    shell:
+        """
+        salmon quant -i $(dirname {input.index_done}) -l A \
+        -1 {input.fq1} -2 {input.fq2} \
+        -o $(dirname {output.quant}) \
+        -p {threads} --validateMappings > {log} 2>&1
+        """

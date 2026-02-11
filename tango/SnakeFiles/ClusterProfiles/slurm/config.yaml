@@ -1,0 +1,77 @@
+# tango/SnakeFiles/ClusterProfiles/slurm/config.yaml
+executor: slurm
+jobs: 215 # normal qos says 1000 jobs per user is the limit. Lets test that...
+latency-wait: 60
+
+default-resources:
+  # default from the execute_snakemake.sbatch script #cpus_per_task: 6 # default to 6 # commenting out due to this value taking priority, see set-threads below and in each rule...
+  mem_mb_per_cpu: 1500
+  slurm_partition: amilan
+  slurm_account: csu-general
+  slurm_qos: normal
+  runtime: 540 # likely wont need this time but we dont want timeouts. If jobs for each rules timeout, specify larger times below in rule specific resources... 540 min is ~ 9 hours
+  slurm_mail_type: END,FAIL 
+  slurm_mail_user: youremail@colostate.edu
+
+
+# overrides for the heavy rules
+### Likely need to set threads for each if using a slurm scheduler, check back later...
+set-resources:
+  build_hisat2_index:
+    cpus_per_task: 4
+    mem_mb: 16000           # 16 GB for graph index build
+  build_fasta_index: 
+    cpus_per_task: 2
+    mem_mb: 4000            # 4 GB for faidx
+  fastp_trim_pe:
+    cpus_per_task: 4
+    mem_mb: 8000            # 8 GB for fastp (4 threads × 1.5 GB)
+  hisat2_align_pe_bam: 
+    cpus_per_task: 16
+    mem_mb: 16000           # 16 GB for alignment + sort (8 threads × 1.5 GB)
+  samtools_index_bam:
+    cpus_per_task: 8
+    mem_mb: 4000            # 4 GB for indexing
+  deeptools_make_bigwig:
+    cpus_per_task: 8
+    mem_mb: 6000            # 6 GB for bamCoverage (2 threads × 1.5 GB + overhead)
+  stringtie_assemble:
+    cpus_per_task: 8
+    mem_mb: 16000            # 8 GB for per-sample assembly
+  stringtie_merge:
+    cpus_per_task: 6
+    mem_mb: 16000            # 4 GB for merging GTFs
+  stringtie_ballgown:
+    cpus_per_task: 8
+    mem_mb: 8000            # 8 GB for -e -B tables (4 threads × 1.5 GB)
+  stringtie_prepDE:
+    cpus_per_task: 4
+    mem_mb: 2000            # 2 GB is plenty to collate .ctab files
+  gff_compare:
+    cpus_per_task: 4
+    mem_mb: 2000
+  run_busco:
+    cpus_per_task: 20
+    mem_mb: 32000           # 32 GB, BUSCO runs a ton under the hood...
+  generate_salmon_index_ref:
+    cpus_per_task: 12
+    mem_mb: 16000
+    time: "08:00:00"
+  generate_salmon_index_denovo:
+    cpus_per_task: 12
+    mem_mb: 32000 # conservative with RAM here since our denovo transcriptome is huge.
+    time: "08:00:00"
+  run_salmon_denovo:
+    cpus_per_task: 8
+    mem_mb: 8000
+    time: "08:00:00"
+  run_salmon_ref:
+    cpus_per_task: 8
+    mem_mb: 8000
+    time: "08:00:00"
+  run_reference_busco:
+    cpus_per_task: 20
+    mem_mb: 32000           # 32 GB, BUSCO runs a ton under the hood...
+  gffcompare_class_counting:
+    cpus_per_task: 2
+    mem_mb: 4000

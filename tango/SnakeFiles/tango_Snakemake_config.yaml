@@ -1,0 +1,24 @@
+# Tango Config File:
+
+# directory containing subdirectories with raw data. only change if you didnt put your data in the RawData subdirectory.
+#rawdata_dir: "../RawData/" # if your data dir can fit in the tango directory, this is a convienient location
+rawdata_dir: "/scratch/alpine/youremail@colostate.edu/2025_rawdata/" # since my data is on a different filesystem I can specify that with the absolute path
+
+# path to the genome of interest in fasta format (.fa/.fasta/etc.) !! CHANGE THIS FILENAME FOR YOUR SPECIFIC FILE !!
+fasta: "../Genome/yourfasta.fasta"
+
+# path to the reference annotation in gff format !! CHANGE THIS FILENAME FOR YOUR SPECIFIC FILE !!
+gff: "../Genome/yourgff.gff"
+
+# path to the reference transcriptome, if available. !! CHANGE THIS FILENAME FOR YOUR SPECIFIC FILE !! # No longer only needed for transrate. update documentation (ref_busco+salmon now uses this reference transcriptome; it's optional though)
+trans_fasta: "../Genome/your_transcripts.fa"
+
+# Hisat2 index file extension; set to "ht2l" if genome ≥ 4 Gbp. (Leave at ht2 if genome less than 4Gbp; see HISAT2-build docs)
+hisat2_index_extension: "ht2"
+
+# path to the output directory. only change if you want you output to be outside of the default subdirectory.
+output_dir: "/scratch/alpine/youremail@colostate.edu/Output/" # my output space will be on a different file system.
+#output_dir: "../Output/" # default directory is tango/tango/Output/ # Convienient if you have the disk space
+
+# path to tango Utils directory. This is where some custom scripts live. No need to change this selection, but I didn't want to hard code it.
+utils_dir: "../Utils/"

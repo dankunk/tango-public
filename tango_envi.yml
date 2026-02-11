@@ -1,0 +1,23 @@
+name: tango
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.11
+  - fastp=0.24.1
+  - stringtie=2.2.1
+  - hisat2=2.2.1
+  - samtools=1.21
+  - deeptools=3.5.6
+  - gffcompare=0.12.9
+  - gffread=0.12.7
+  - busco=5.8.2
+  - snakemake
+  - multiqc=1.28
+  - salmon=1.10.3
+  - pip                    
+  - pip:
+      - snakemake-executor-plugin-slurm==1.2.10
+
+prefix: /projects/.colostate.edu/dkunk1/software/anaconda/envs/tango

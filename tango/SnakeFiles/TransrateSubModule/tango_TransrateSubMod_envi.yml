@@ -1,0 +1,7 @@
+name: tango_transrate
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=2.7.15
+  - transrate=1.0.3
