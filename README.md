@@ -1,4 +1,4 @@
-<img src="tango.png" alt="Tango logo" align="right" width="140" style="margin-left: 16px;"/>
+<img src="tango.png" alt="Tango logo" align="right" width="300" style="margin-left: 16px;"/>
 
 # Tango: A Snakemake Pipeline for Time-series ANalysis of Gene (and transcript!) Oscillations
 
