@@ -4,7 +4,7 @@
 
 Tango is a Snakemake-based RNA-seq processing pipeline built for time-series experiments where you want reliable **gene- and transcript-level** quantification (salmon) using a **reference genome/annotation**, with an optional **genome-guided de novo transcriptome** assembly (via StringTie) for exploring novel isoforms. Starting from paired-end FASTQ files, Tango performs trimming + QC, splice-aware alignment, transcript assembly/merging, annotation comparison, QC (e.g., BUSCO), and Salmon quantification against a **reference transcriptome** and/or a **StringTie-merged transcriptome**. Where possible, steps are **streamed/piped between tools** (e.g., aligner → BAM processing) to avoid writing large intermediate files and help keep scratch usage manageable.
 
-Why the name Tango? We originally set out to choreograph the entire time series rhythmicity analysis end to end, but downstream rhythm calling is often an interactive and lab specific process. We decided to stop Tango here as to focus on the steps in the process that benefit most from Snakemake style automation on an HPC: robust RNA seq processing and fast, scalable gene and transcript level quantification (reference and or genome guided de novo). This pipeline was built to parallelize cleanly across lots of samples via SLURM job scheduling for large time series experiments (>100 PE samples). In the future we may extend Tango with optional analysis rules for common rhythmicity workflows like cosinor or JTK_CYCLE, while keeping the core pipeline modular so labs can mix and match or swap downstream methods as needed.
+Why the name Tango? We originally set out to choreograph the entire time series rhythmicity analysis end to end, but downstream rhythm calling is often an interactive and lab specific process. We decided to stop Tango here to focus on the steps in the process that benefit most from Snakemake style automation on an HPC: robust RNA seq processing and fast, scalable gene and transcript level quantification (reference and or genome guided de novo). This pipeline was built to parallelize cleanly across lots of samples via SLURM job scheduling for large time series experiments (>100 PE samples). In the future we may extend Tango with optional analysis rules for common rhythmicity workflows like cosinor or JTK_CYCLE, while keeping the core pipeline modular so labs can mix and match or swap downstream methods as needed.
 
 
 - **Rulegraph (SVG):** [rulegraph.svg](tango/SnakeFiles/rulegraph.svg)
@@ -63,8 +63,7 @@ Similarly, your raw reads do not need to be copied into the repo:
 
 Keeping large, frequently-written outputs on scratch will:
 - avoid filling home/project quotas,
-- speed up I/O-heavy steps,
-- keep the git repo lightweight.
+- speed up I/O-heavy steps.
 
 ---
 
